@@ -10,6 +10,7 @@
 /* The default hash funciton */
 #include "hash.h"
 #include "buffer.h"
+#include "traits.h"
 
 namespace madb {
     /* The first template parameter must be a POD type that you wish to store
@@ -21,24 +22,22 @@ namespace madb {
     template <typename D, typename H=superfast>
     class db {
     public:
+        /* Our traits */
+        typedef data_traits<D> traits;
+
+        /* "Inherited" traits */
+        typedef typename traits::key_type       key_type;
+        typedef typename traits::value_type     value_type;
+        typedef typename traits::timestamp_type timestamp_type;
+        typedef typename traits::data_type      data_type;
+        typedef typename traits::values_type    values_type;
+
+        /* Callback traits */
+        typedef typename traits::insert_cb_type insert_cb_type;
+        typedef typename traits::get_cb_type    get_cb_type;
+
         /* Some helpful typedefs */
-        typedef std::string key_type;
-        typedef D           value_type;
-        typedef uint32_t    timestamp_type;
         typedef H           hash_type;
-
-        /* A single data point */
-        typedef struct data_type_ {
-            timestamp_type time;
-            value_type     value;
-        } data_type;
-
-        /* A list of data points */
-        typedef std::vector<data_type> values_type;
-
-        /* Callback types */
-        typedef void(* insert_cb_type)(void*);
-        typedef void(*    get_cb_type)(const values_type&, void*);
 
         /* Constructor
          *
@@ -89,7 +88,10 @@ namespace madb {
          * @param value -- data point to insert */
         void insert(const key_type& name, timestamp_type time,
             const value_type& value) {
-
+            /* Figure out which buffer this needs to be mapped to */
+            uint32_t hashed = hasher(
+                name.c_str(), name.length()) % buffers.size();
+            buffers[hashed].insert(name, time, value);
         }
 
         /* Insert a datapoint asynchronously
@@ -111,7 +113,9 @@ namespace madb {
          * @param end -- end of the range, inclusive */
         values_type get(const key_type& name, timestamp_type start,
             timestamp_type end) {
-            return values_type();
+            uint32_t hashed = hasher(
+                name.c_str(), name.length()) % buffers.size();
+            return buffers[hashed].get(name, start, end);
         }
 
         /* Get data asynchronously
@@ -123,7 +127,7 @@ namespace madb {
          * @param data -- user data to pass to the callback */
         void get(const key_type& name, timestamp_type start,
             timestamp_type end, get_cb_type cb, void* data) {
-            cb(values_type(), data);
+            cb(get(name, start, end), data);
         }
     private:
         /* Private, unimplemented to prevent use */
