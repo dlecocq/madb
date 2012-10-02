@@ -26,18 +26,20 @@ namespace madb {
         typedef data_traits<D> traits;
 
         /* "Inherited" traits */
-        typedef typename traits::key_type       key_type;
-        typedef typename traits::value_type     value_type;
-        typedef typename traits::timestamp_type timestamp_type;
-        typedef typename traits::data_type      data_type;
-        typedef typename traits::values_type    values_type;
+        typedef typename traits::key_type        key_type;
+        typedef typename traits::value_type      value_type;
+        typedef typename traits::timestamp_type  timestamp_type;
+        typedef typename traits::data_type       data_type;
+        typedef typename traits::values_type     values_type;
+        typedef typename traits::values_map_type values_map_type;
 
         /* Callback traits */
-        typedef typename traits::insert_cb_type insert_cb_type;
-        typedef typename traits::get_cb_type    get_cb_type;
+        typedef typename traits::insert_cb_type  insert_cb_type;
+        typedef typename traits::read_cb_type    read_cb_type;
+        typedef typename traits::get_cb_type     get_cb_type;
 
-        /* Some helpful typedefs */
-        typedef H           hash_type;
+        /* Our hash type */
+        typedef          H                       hash_type;
 
         /* Constructor
          *
@@ -53,25 +55,10 @@ namespace madb {
                 path = path + "/";
             }
 
-            /* At this point, we should consider reading in any existing
-             * buffers and rotating them out */
-            DIR *dir;
-            struct dirent *ent;
-            dir = opendir(path.c_str());
+            /* We should also make sure that the directory exists */
 
-            if (dir != NULL) {
-                while ((ent = readdir(dir)) != NULL) {
-                    std::string s(ent->d_name);
-                    if (s.find(".buffer") == 0) {
-                        s = path + s;
-                        buffer<D>::read(s).rotate();
-                        std::cout << s << std::endl;
-                    }
-                }
-                closedir(dir);
-            } else {
-                std::cerr << "Couldn't read " << path << std::endl;
-            }
+            /* Rotate out any existing buffers */
+            buffer<D>::rotate(path);
 
             for (uint32_t i = 0; i < num_files; ++i) {
                 buffers[i].mktemp(path);

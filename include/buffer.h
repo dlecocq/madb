@@ -6,12 +6,15 @@
 #include <iostream>
 
 /* For mkstemp */
-#include <fcntl.h>
-#include <cstdlib>
-#include <cstring>
-#include <unistd.h>
+// #include <fcntl.h>
+// #include <cstdlib>
+// #include <cstring>
+// #include <unistd.h>
 
 #include "traits.h"
+
+/* I am somewhat loathe to do this, but alas, I must */
+#include <boost/filesystem.hpp>
 
 namespace madb {
     template <typename D>
@@ -19,6 +22,14 @@ namespace madb {
     public:
         /* This file should only grow to 10MB before it gets rotated out */
         static const int32_t max_size = 10 * 1024 * 1024;
+
+        /* To mode with which we open files */
+        static const typename std::fstream::openmode open_mode =
+            static_cast<std::fstream::openmode>(
+                static_cast<int>(std::fstream::binary) |
+                static_cast<int>(std::fstream::out)    |
+                static_cast<int>(std::fstream::app)    |
+                static_cast<int>(std::fstream::in));
 
         /* Our traits */
         typedef data_traits<D> traits;
@@ -36,19 +47,17 @@ namespace madb {
         typedef typename traits::read_cb_type    read_cb_type;
         typedef typename traits::get_cb_type     get_cb_type;
 
-        /* Open a given path and return a buffer object
+        /* Rotate out all the old buffer files in the provided path
          *
-         * @param path -- path to the file to open */
-        static buffer<D> read(const std::string& pth) {
-            buffer<D> buf;
+         * @param base -- path to the base directory where the buffers live */
+        static void rotate(const std::string& base_path) {
+            std::cout << "Rotate(" << base_path << ")" << std::endl;
+            boost::filesystem::directory_iterator it(base_path);
+            boost::filesystem::directory_iterator it_end;
 
-            buf.stream.open(pth.c_str(), std::fstream::binary |
-                std::fstream::out |
-                std::fstream::in);
-
-            buf.path = pth;
-
-            return buf;
+            for (; it != it_end; ++it) {
+                buffer(it->path().string(), base_path).dump();
+            }
         }
 
         /* Make a new temporary buffer
@@ -56,31 +65,19 @@ namespace madb {
          * @param base -- path to the base directory to put the file in */
         void mktemp(const std::string& base_path) {
             /* Close the old file descriptor if necessary */
-            close_();
+            close();
 
+            /* Save out our new base path */
             base = base_path;
 
-            /* Construct a template argument to mkstemp. You can't use a string
-             * constant argument, because it tries to replace the contents with
-             * the new filename. */
-            char* templ = reinterpret_cast<char*>(malloc(
-                base.length() + 14));
-            strncpy(templ                , base.c_str()   , base.length());
-            strncpy(templ + base.length(), ".bufferXXXXXX", 14);
+            /* Now, let's get a unique name */
+            boost::filesystem::path new_path = boost::filesystem::unique_path(base_path + ".buffer.%%%%%%");
             
-            int fd = 0;
-            if ((fd = mkstemp(templ)) == -1) {
-                std::cout << "Failed to make temporary file" << std::endl;
-                free(templ);
-                exit(1);
-            }
-
-            /* Save out our path, close file descriptor after opening path */
-            path = templ;
-            stream.open(templ, std::fstream::binary | std::fstream::out |
-                std::fstream::in);
-            free(templ);
-            close(fd);
+            /* And then let's open up our stream */
+            path = new_path.string();
+            std::cout << "Opening up new path " << path << std::endl;
+            stream.open(path.c_str(), open_mode);
+            written = 0;
         }
 
         /* Default constructor
@@ -88,38 +85,55 @@ namespace madb {
          * Opens nothing, sits idle */
         buffer(): stream(), path(""), base(""), written(0) {}
 
-        /* Copy constructor */
-        buffer(const buffer& other): stream(), path(""), base(other.base),
+        /* Open a file
+         *
+         * @param path -- the path to open
+         * @param base -- base of the buffer directory to open */
+        buffer(const std::string& path, const std::string& base):
+            stream(path.c_str(), open_mode), path(path), base(base),
             written(0) {
-            /* Empty */
+            /* Read how far along in the file we are */
+            written = stream.tellp();
         }
+
+        /* Copy constructor */
+        buffer(const buffer& other): stream(other.path.c_str()),
+            path(other.path),base(other.base), written(other.written) {}
 
         /* Destructor */
         ~buffer() {
-            close_();
+            close();
+        }
+
+        /* Take all the data out of the current buffer and write it out to all
+         * of the files where they belong */
+        int dump() {
+            /* Make sure it's open */
+            std::cout << "Dumping " << path << std::endl;
+            if (!stream.is_open()) {
+                std::cout << "Not open..." << std::endl;
+                return 0;
+            }
+
+            /* Afterwards, remove the file */
+            if (!boost::filesystem::remove(path)) {
+                perror("Failed to remove path");
+                return -1;
+            }
+
+            /* Open up a new file descriptor */
+            close();
+
+            return 0;
         }
 
         /* Rotate out the current buffer file for a new one
          *
          * @returns 0 on success, else -1 */
         int rotate() {
-            if (!stream.is_open()) {
-                return 0;
-            }
-
-            //std::cout << "Rotating " << path << std::endl;
-
-            /* Afterwards, remove the file */
-            if (remove(path.c_str()) != 0) {
-                perror("Failed to remove path");
-                return -1;
-            }
-
-            /* Open up a new file descriptor */
-            close_();
-
+            dump();
             mktemp(base);
-
+            std::cout << "Rotating out " << path << std::endl;
             return 0;
         }
 
@@ -228,7 +242,7 @@ namespace madb {
         int          written;   /* How many bytes have been written */
 
         /* Close up our current file descriptor */
-        void close_() {
+        void close() {
             path = "";
             stream.close();
         }

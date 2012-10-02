@@ -19,11 +19,11 @@ int main(int argc, char* argv[]) {
     //*
     uint32_t i = 0;
     std::vector<std::string> metrics;
-    for (i = 0; i < 1000; ++i) {
+    for (i = 0; i < 100; ++i) {
         metrics.push_back(tmpnam(NULL));
     }
 
-    for (i = 0; i < 1000; ++i) {
+    for (i = 0; i < 100; ++i) {
         std::vector<std::string>::iterator it = metrics.begin();
         for (; it != metrics.end(); ++it) {
             datum d = {1, 1, 1, 1, 1};
