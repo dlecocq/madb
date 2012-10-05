@@ -18,6 +18,10 @@ namespace madb {
         typedef struct data_type_ {
             timestamp_type time;
             value_type     value;
+
+            bool operator<(const data_type_& other) const {
+                return time < other.time;
+            }
         } data_type;
 
         /* A list of data points */

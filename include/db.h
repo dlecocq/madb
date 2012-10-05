@@ -12,6 +12,8 @@
 #include "buffer.h"
 #include "traits.h"
 
+#include <boost/filesystem.hpp>
+
 namespace madb {
     /* The first template parameter must be a POD type that you wish to store
      * as the value type associated with each time for the metric. The second
@@ -115,6 +117,11 @@ namespace madb {
         void get(const key_type& name, timestamp_type start,
             timestamp_type end, get_cb_type cb, void* data) {
             cb(get(name, start, end), data);
+        }
+
+        /* Destroy this database */
+        void destroy() {
+            boost::filesystem::remove_all(path);
         }
     private:
         /* Private, unimplemented to prevent use */

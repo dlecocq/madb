@@ -5,12 +5,8 @@
 #include <fstream>
 #include <iostream>
 
-/* For mkstemp */
-// #include <fcntl.h>
-// #include <cstdlib>
-// #include <cstring>
-// #include <unistd.h>
-
+/* Internal import */
+#include "slab.h"
 #include "traits.h"
 
 /* I am somewhat loathe to do this, but alas, I must */
@@ -21,7 +17,7 @@ namespace madb {
     class buffer {
     public:
         /* This file should only grow to 10MB before it gets rotated out */
-        static const int32_t max_size = 10 * 1024 * 1024;
+        static const int32_t max_size = 5 * 1024 * 1024;
 
         /* To mode with which we open files */
         static const typename std::fstream::openmode open_mode =
@@ -46,39 +42,6 @@ namespace madb {
         typedef typename traits::insert_cb_type  insert_cb_type;
         typedef typename traits::read_cb_type    read_cb_type;
         typedef typename traits::get_cb_type     get_cb_type;
-
-        /* Rotate out all the old buffer files in the provided path
-         *
-         * @param base -- path to the base directory where the buffers live */
-        static void rotate(const std::string& base_path) {
-            std::cout << "Rotate(" << base_path << ")" << std::endl;
-            boost::filesystem::directory_iterator it(base_path);
-            boost::filesystem::directory_iterator it_end;
-
-            for (; it != it_end; ++it) {
-                buffer(it->path().string(), base_path).dump();
-            }
-        }
-
-        /* Make a new temporary buffer
-         *
-         * @param base -- path to the base directory to put the file in */
-        void mktemp(const std::string& base_path) {
-            /* Close the old file descriptor if necessary */
-            close();
-
-            /* Save out our new base path */
-            base = base_path;
-
-            /* Now, let's get a unique name */
-            boost::filesystem::path new_path = boost::filesystem::unique_path(base_path + ".buffer.%%%%%%");
-            
-            /* And then let's open up our stream */
-            path = new_path.string();
-            std::cout << "Opening up new path " << path << std::endl;
-            stream.open(path.c_str(), open_mode);
-            written = 0;
-        }
 
         /* Default constructor
          *
@@ -105,6 +68,32 @@ namespace madb {
             close();
         }
 
+        /* Make a new temporary buffer
+         *
+         * @param base -- path to the base directory to put the file in */
+        void mktemp(const std::string& base_path) {
+            /* Close the old file descriptor if necessary */
+            close();
+
+            /* Save out our new base path */
+            base = base_path;
+
+            /* Now, let's get a unique name */
+            boost::filesystem::path new_path(base_path);
+            /* Make sure the directory we need for the buffers exists, and then
+             * generate a new, unique path */
+            new_path /= "buffers";
+            boost::filesystem::create_directories(new_path);
+            new_path /= ".buffer.%%%%%%";
+            new_path = boost::filesystem::unique_path(new_path);
+            
+            /* And then let's open up our stream */
+            path = new_path.string();
+            std::cout << "Opening up new path " << path << std::endl;
+            stream.open(path.c_str(), open_mode);
+            written = 0;
+        }
+
         /* Take all the data out of the current buffer and write it out to all
          * of the files where they belong */
         int dump() {
@@ -113,6 +102,16 @@ namespace madb {
             if (!stream.is_open()) {
                 std::cout << "Not open..." << std::endl;
                 return 0;
+            }
+
+            /* Now, we should read in everything, iterate through it and write
+             * out the contents to the files we should write out to */
+            values_map_type results(read());
+            typename values_map_type::iterator it(results.begin());
+            for (; it != results.end(); ++it) {
+                //std::cout << "Reading " << it->first << std::endl;
+                slab<D>(base, it->first).insert(
+                    it->second.begin(), it->second.end());
             }
 
             /* Afterwards, remove the file */
@@ -133,8 +132,26 @@ namespace madb {
         int rotate() {
             dump();
             mktemp(base);
-            std::cout << "Rotating out " << path << std::endl;
             return 0;
+        }
+
+        /* Rotate out all the old buffer files in the provided path
+         *
+         * @param db_path -- path to the database's directory */
+        static void rotate(const std::string& db_path) {
+            boost::filesystem::path buffers_path(db_path);
+            buffers_path /= "buffers";
+            std::cout << "Rotate(" << buffers_path.string() << ")"
+                << std::endl;
+
+            if (boost::filesystem::is_directory(buffers_path)) {
+                boost::filesystem::directory_iterator it(buffers_path);
+                boost::filesystem::directory_iterator it_end;
+
+                for (; it != it_end; ++it) {
+                    buffer(it->path().string(), db_path).dump();
+                }
+            }
         }
 
         /* Write a data point to the file */
@@ -180,11 +197,13 @@ namespace madb {
             stream.seekg(0, std::fstream::beg);
 
             /* Now, while the file descriptor is good, keep reading */
-            while (!stream.eof()) {
+            int count = 0;
+            while (count < written) {
                 stream.read(reinterpret_cast<char*>(&len), sizeof(size_t));
                 stream.read(key, len);
                 stream.read(reinterpret_cast<char*>(&datum), sizeof(datum));
                 results[std::string(key, len)].push_back(datum);
+                count += (sizeof(size_t) + len + sizeof(datum));
             }
 
             return results;
@@ -209,7 +228,7 @@ namespace madb {
             values_type all(read()[name]);
 
             /* And then prepare the response */
-            values_type results;
+            values_type results(slab<D>(base, name).get(start, end));
 
             typename values_type::iterator it(all.begin());
             for (; it != all.end(); ++it) {
