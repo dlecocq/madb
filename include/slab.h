@@ -195,7 +195,7 @@ namespace madb {
                 if (it->path().filename().string() == "latest") {
                     continue;
                 }
-                
+
                 /* If it's a real file... */
                 std::stringstream ss(it->path().filename().string());
                 timestamp_type time;
@@ -204,6 +204,34 @@ namespace madb {
             }
 
             return results;
+        }
+
+        /* Return a list of all the metrics */
+        static std::vector<key_type> metrics(const std::string& db_path) {
+            boost::filesystem::path p(db_path);
+            p /= "metrics";
+
+            std::vector<key_type> results;
+
+            if (boost::filesystem::is_directory(p)) {
+                boost::filesystem::recursive_directory_iterator it(p);
+                boost::filesystem::recursive_directory_iterator it_end;
+
+                /* If the provided path is a directory, it's part of the
+                 * results */
+                if (boost::filesystem::is_directory(it->path())) {
+                    results.push_back(
+                        it->path().string().substr(p.string().length()));
+                }
+            }
+
+            return results;
+        }
+
+        /* Find all the metrics that match a pattern */
+        static std::vector<key_type> metrics(const std::string& db_path,
+            const std::string& pattern) {
+            return slab<value_type>::metrics(pattern);
         }
     private:
         /* Private, unimplemented to avoid use */

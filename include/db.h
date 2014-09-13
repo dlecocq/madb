@@ -123,6 +123,16 @@ namespace madb {
         void destroy() {
             boost::filesystem::remove_all(path);
         }
+
+        /* Return a list of all the metrics */
+        std::vector<key_type> metrics() {
+            return slab<value_type>::metrics(path);
+        }
+
+        /* Find all the metrics that match a pattern */
+        std::vector<key_type> metrics(const std::string& pattern) {
+            return slab<value_type>::metrics(path, pattern);
+        }
     private:
         /* Private, unimplemented to prevent use */
         db();

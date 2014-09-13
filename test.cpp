@@ -96,6 +96,43 @@ TEST_CASE("db", "works as advertised") {
         /* Lastly, we destroy the database */
         db.destroy();
     }
+
+    SECTION("metrics", "can list all the metrics that we add") {
+        madb::db<datum> db("foo", 128);
+
+        typedef std::set<madb::db<datum>::key_type>    set_type;
+        typedef std::vector<madb::db<datum>::key_type> vector_type;
+
+        set_type metrics;
+        metrics.insert("hello");
+        metrics.insert("how");
+        metrics.insert("are");
+        metrics.insert("you");
+
+        /* A datum do insert */
+        datum d = {1, 1, 1, 1, 1};
+
+        set_type::iterator it(metrics.begin());
+        for (; it != metrics.end(); ++it) {    
+            db.insert(*it, 1, d);
+        }
+
+        /* Now, let's list all the metrics, make suer it's complete */
+        vector_type results(db.metrics());
+        set_type result_set(results.begin(), results.end());
+        REQUIRE(result_set == metrics);
+
+        /* Now we should insert another, and make sure it's there, too */
+        metrics.insert("today");
+        db.insert("today", 1, d);
+        results = db.metrics();
+        result_set.clear();
+        result_set.insert(results.begin(), results.end());
+        REQUIRE(result_set == metrics);
+
+        /* Clean up */
+        db.destroy();
+    }
 }
 
 int main(int argc, char* const argv[]) {    
